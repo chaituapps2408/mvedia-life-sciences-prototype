@@ -393,7 +393,9 @@
       ],
 
       cart: {},
-      deliverySlot: 'Today, 5:00 PM – 7:00 PM',
+      deliveryDate: new Date().toISOString().slice(0, 10),
+      deliveryTimeSlot: '4:30 PM – 7:00 PM',
+      deliverySlot: 'Today · 4:30 PM – 7:00 PM',
       deliveryNote: '',
       sampleRequests: [],
 
@@ -1319,13 +1321,65 @@
       `;
     }
 
+    function getUpcomingDays(count = 5) {
+      const days = [];
+      const now = new Date();
+      const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      for (let i = 0; i < count; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
+        const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        days.push({
+          iso,
+          top: i === 0 ? 'Today' : i === 1 ? 'Tmrw' : weekdays[d.getDay()],
+          num: d.getDate(),
+          mon: months[d.getMonth()],
+          label: i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : `${weekdays[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]}`
+        });
+      }
+      return days;
+    }
+
+    function formatIsoDateLabel(iso) {
+      const days = getUpcomingDays(2);
+      const match = days.find(d => d.iso === iso);
+      if (match) return match.label;
+      const parts = iso.split('-').map(Number);
+      if (parts.length !== 3) return iso;
+      const d = new Date(parts[0], parts[1] - 1, parts[2]);
+      const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return `${weekdays[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]}`;
+    }
+
+    function setDeliveryDate(iso) {
+      if (!iso) return;
+      state.deliveryDate = iso;
+      state.deliverySlot = `${formatIsoDateLabel(iso)} · ${state.deliveryTimeSlot}`;
+      render();
+    }
+
+    function setDeliveryTimeSlot(slotTime) {
+      state.deliveryTimeSlot = slotTime;
+      state.deliverySlot = `${formatIsoDateLabel(state.deliveryDate)} · ${slotTime}`;
+      render();
+    }
+
     function viewDoctorCheckout() {
       const cart = getCart();
       const doc = activeDoctor();
-      const slots = [
-        { label: 'Today Evening', time: '5:00 PM – 7:00 PM', full: 'Today, 5:00 PM – 7:00 PM' },
-        { label: 'Tomorrow Morning', time: '10:00 AM – 12:30 PM', full: 'Tomorrow, 10:00 AM – 12:30 PM' },
-        { label: 'Tomorrow Evening', time: '5:00 PM – 7:00 PM', full: 'Tomorrow, 5:00 PM – 7:00 PM' }
+      const upcomingDays = getUpcomingDays(5);
+      const minIso = upcomingDays[0].iso;
+      if (!state.deliveryDate || state.deliveryDate < minIso) {
+        state.deliveryDate = minIso;
+      }
+      state.deliverySlot = `${formatIsoDateLabel(state.deliveryDate)} · ${state.deliveryTimeSlot}`;
+
+      const timeSlots = [
+        { label: 'Morning', time: '9:30 AM – 12:00 PM' },
+        { label: 'Afternoon', time: '12:00 PM – 3:00 PM' },
+        { label: 'Evening', time: '4:30 PM – 7:00 PM' },
+        { label: 'Late OPD', time: '7:00 PM – 9:00 PM' }
       ];
 
       return `
@@ -1362,20 +1416,55 @@
             </div>
           </section>
 
+          <!-- Delivery Date Picker -->
           <section class="space-y-2.5">
-            <h2 class="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Preferred Clinic Delivery</h2>
-            <div class="space-y-2">
-              ${slots.map(s => {
-                const selected = state.deliverySlot === s.full;
+            <div class="flex items-center justify-between">
+              <h2 class="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Delivery Date</h2>
+              <span class="text-xs font-semibold text-[var(--primary)]">${formatIsoDateLabel(state.deliveryDate)}</span>
+            </div>
+
+            <!-- Quick 5-Day Native Chips -->
+            <div class="grid grid-cols-5 gap-1.5">
+              ${upcomingDays.map(d => {
+                const active = state.deliveryDate === d.iso;
                 return `
-                  <button onclick="state.deliverySlot='${s.full}'; render();" class="press w-full p-3.5 rounded-2xl border text-left flex items-center justify-between cursor-pointer ${selected ? 'bg-[var(--card)] border-[var(--primary)] shadow-sm' : 'bg-[var(--card)]/60 border-[var(--card-border)]'}">
-                    <div>
-                      <div class="text-sm font-semibold text-[var(--foreground)]">${s.label}</div>
-                      <div class="text-xs text-[var(--muted-foreground)]">${s.time}</div>
+                  <button onclick="setDeliveryDate('${d.iso}')" class="press py-2.5 px-1 rounded-2xl border text-center cursor-pointer ${active ? 'bg-[var(--primary)] text-[var(--primary-foreground)] border-[var(--primary)] shadow-sm' : 'bg-[var(--card)] text-[var(--foreground)] border-[var(--card-border)]'}">
+                    <div class="text-[11px] font-medium ${active ? 'opacity-90' : 'text-[var(--muted-foreground)]'}">${d.top}</div>
+                    <div class="text-sm font-bold tabular-nums leading-tight mt-0.5">${d.num}</div>
+                    <div class="text-[11px] ${active ? 'opacity-85' : 'text-[var(--muted-foreground)]'}">${d.mon}</div>
+                  </button>
+                `;
+              }).join('')}
+            </div>
+
+            <!-- Calendar Date Picker for Any Other Future Date -->
+            <label class="flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-[var(--card)] border border-[var(--card-border)] text-xs cursor-pointer">
+              <span class="text-[var(--muted-foreground)] font-medium">Or pick another date</span>
+              <input
+                type="date"
+                min="${minIso}"
+                value="${state.deliveryDate}"
+                onchange="setDeliveryDate(this.value)"
+                class="bg-transparent text-xs font-semibold text-[var(--foreground)] outline-none cursor-pointer"
+              />
+            </label>
+          </section>
+
+          <!-- Preferred Time Slot Picker -->
+          <section class="space-y-2.5">
+            <h2 class="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Preferred Time Slot</h2>
+            <div class="grid grid-cols-2 gap-2">
+              ${timeSlots.map(s => {
+                const selected = state.deliveryTimeSlot === s.time;
+                return `
+                  <button onclick="setDeliveryTimeSlot('${s.time}')" class="press p-3 rounded-2xl border text-left cursor-pointer ${selected ? 'bg-[var(--card)] border-[var(--primary)] shadow-sm' : 'bg-[var(--card)]/70 border-[var(--card-border)]'}">
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-bold ${selected ? 'text-[var(--primary)]' : 'text-[var(--foreground)]'}">${s.label}</span>
+                      <span class="w-4 h-4 rounded-full border-2 flex items-center justify-center ${selected ? 'border-[var(--primary)]' : 'border-[var(--border)]'}">
+                        ${selected ? `<span class="w-2 h-2 rounded-full bg-[var(--primary)]"></span>` : ''}
+                      </span>
                     </div>
-                    <div class="w-5 h-5 rounded-full border-2 flex items-center justify-center ${selected ? 'border-[var(--primary)]' : 'border-[var(--border)]'}">
-                      ${selected ? `<div class="w-2.5 h-2.5 rounded-full bg-[var(--primary)]"></div>` : ''}
-                    </div>
+                    <div class="text-xs text-[var(--muted-foreground)] mt-1 tabular-nums">${s.time}</div>
                   </button>
                 `;
               }).join('')}
