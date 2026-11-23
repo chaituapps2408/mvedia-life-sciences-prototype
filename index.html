@@ -377,10 +377,20 @@
       confirmedOrderId: null,
       invoiceOrderId: null,
 
-      // Owner views: 'deliveries' | 'owner-invoice' | 'owner-collect' | 'invoice' | 'cashbook' | 'doctors'
+      // Owner views: 'deliveries' | 'owner-invoice' | 'owner-collect' | 'invoice' | 'cashbook' | 'doctors' | 'assistant'
       ownerView: 'deliveries',
       activeOwnerOrderId: null,
       ownerFilter: 'open',
+      aiDraft: '',
+      aiThinking: false,
+      aiMessages: [
+        {
+          sender: 'ai',
+          time: 'Today, 9:00 AM',
+          title: 'Mvedia AI Business Assistant',
+          html: `Hi ${OWNER.name.split(' ')[0]}! Ask me anytime for your live order status, pending deliveries, cash vs UPI collected, or doctor follow-ups.`
+        }
+      ],
 
       cart: {},
       deliverySlot: 'Today, 5:00 PM – 7:00 PM',
@@ -590,7 +600,7 @@
     function switchRole(role) {
       state.role = role;
       closeSheet();
-      if (role === 'owner' && !['deliveries', 'cashbook', 'doctors'].includes(state.ownerView)) {
+      if (role === 'owner' && !['deliveries', 'cashbook', 'doctors', 'assistant'].includes(state.ownerView)) {
         state.ownerView = 'deliveries';
       }
       render();
@@ -834,10 +844,13 @@
         else if (state.ownerView === 'owner-collect') root.innerHTML = viewOwnerCollectPayment();
         else if (state.ownerView === 'invoice') root.innerHTML = viewInvoiceScreen('owner');
         else if (state.ownerView === 'cashbook') root.innerHTML = viewOwnerCashbook();
+        else if (state.ownerView === 'assistant') root.innerHTML = viewOwnerAssistant();
         else root.innerHTML = viewOwnerDoctors();
       }
 
       document.getElementById('email-badge').textContent = state.emails.length;
+      const chatScroll = document.getElementById('ai-chat-scroll');
+      if (chatScroll) chatScroll.scrollTop = chatScroll.scrollHeight;
     }
 
     // ============================================================
@@ -1985,6 +1998,221 @@
       `;
     }
 
+    function viewOwnerAssistant() {
+      const quickPrompts = [
+        "Today's summary",
+        'Pending deliveries',
+        'Cash vs UPI collected',
+        'Top selling medicine',
+        'Follow-up suggestions'
+      ];
+
+      return `
+        <header class="shrink-0 bg-[var(--card)]/90 glass-bar px-5 pt-2 pb-3 border-b border-[var(--card-border)] flex items-center justify-between z-20">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] flex items-center justify-center shrink-0">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" />
+              </svg>
+            </div>
+            <div>
+              <h1 class="text-sm font-bold tracking-tight text-[var(--foreground)] leading-tight">Mvedia AI Assistant</h1>
+              <p class="text-xs text-[var(--muted-foreground)] leading-tight mt-0.5">Live orders, cashbook &amp; clinic insights</p>
+            </div>
+          </div>
+          <button onclick="askAssistant('Today\\'s summary')" class="press px-2.5 py-1 rounded-full bg-[var(--content)] border border-[var(--border)] text-xs font-semibold text-[var(--primary)] cursor-pointer">
+            Daily Brief
+          </button>
+        </header>
+
+        <!-- Chat Thread -->
+        <main id="ai-chat-scroll" class="flex-1 overflow-y-auto no-scrollbar px-4 pt-4 pb-4 space-y-3">
+          ${state.aiMessages.map(m => m.sender === 'user' ? `
+            <div class="flex justify-end anim-fade-up">
+              <div class="max-w-[82%] px-4 py-2.5 rounded-2xl rounded-br-md bg-[var(--primary)] text-[var(--primary-foreground)] text-xs leading-relaxed font-medium shadow-sm">
+                ${m.text}
+              </div>
+            </div>
+          ` : `
+            <div class="flex justify-start anim-fade-up">
+              <div class="max-w-[90%] rounded-2xl rounded-bl-md bg-[var(--card)] border border-[var(--card-border)] p-3.5 text-xs space-y-2 shadow-sm">
+                ${m.title ? `<div class="font-bold text-[var(--foreground)]">${m.title}</div>` : ''}
+                <div class="text-[var(--foreground)] leading-relaxed space-y-1.5">${m.html}</div>
+                <div class="text-[11px] text-[var(--muted-foreground)]">${m.time}</div>
+              </div>
+            </div>
+          `).join('')}
+
+          ${state.aiThinking ? `
+            <div class="flex justify-start">
+              <div class="px-4 py-2.5 rounded-2xl rounded-bl-md bg-[var(--card)] border border-[var(--card-border)] text-xs text-[var(--muted-foreground)]">
+                Checking live orders &amp; cashbook...
+              </div>
+            </div>
+          ` : ''}
+        </main>
+
+        <!-- Quick Tap Chips + Input Composer -->
+        <div class="shrink-0 bg-[var(--card)] border-t border-[var(--card-border)] px-3 pt-2.5 pb-2 space-y-2 z-20">
+          <div class="flex gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+            ${quickPrompts.map(q => `
+              <button onclick="askAssistant(${JSON.stringify(q).replace(/"/g, '&quot;')})" class="press shrink-0 px-3 py-1.5 rounded-full bg-[var(--content)] border border-[var(--border)] text-xs font-medium text-[var(--foreground)] cursor-pointer">
+                ${q}
+              </button>
+            `).join('')}
+          </div>
+
+          <form onsubmit="submitAssistantInput(event)" class="flex items-center gap-2">
+            <input
+              id="ai-input"
+              type="text"
+              value="${state.aiDraft.replace(/"/g, '&quot;')}"
+              oninput="state.aiDraft = this.value"
+              placeholder="Ask about orders, cash, or doctors..."
+              class="flex-1 px-4 py-2.5 rounded-full bg-[var(--content)] border border-[var(--border)] text-xs text-[var(--foreground)] outline-none focus:border-[var(--primary)]"
+            />
+            <button type="submit" class="press w-9 h-9 rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] flex items-center justify-center shrink-0 cursor-pointer shadow-sm" aria-label="Send">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M12 5l7 7-7 7" />
+              </svg>
+            </button>
+          </form>
+        </div>
+
+        ${renderOwnerBottomNav('assistant')}
+      `;
+    }
+
+    function submitAssistantInput(e) {
+      e.preventDefault();
+      const text = state.aiDraft.trim();
+      if (!text || state.aiThinking) return;
+      state.aiDraft = '';
+      askAssistant(text);
+    }
+
+    function askAssistant(promptText) {
+      if (state.aiThinking) return;
+      state.aiMessages.push({ sender: 'user', text: promptText, time: 'Just now' });
+      state.aiThinking = true;
+      render();
+
+      setTimeout(() => {
+        const reply = generateAssistantReply(promptText);
+        state.aiThinking = false;
+        state.aiMessages.push({
+          sender: 'ai',
+          time: 'Just now · Live DB',
+          title: reply.title,
+          html: reply.html
+        });
+        render();
+      }, 360);
+    }
+
+    function generateAssistantReply(rawPrompt) {
+      const q = rawPrompt.toLowerCase();
+      const openOrders = state.orders.filter(o => o.status !== 'delivered');
+      const deliveredOrders = state.orders.filter(o => o.status === 'delivered');
+
+      let cashTotal = 0, upiTotal = 0, pendingTotal = 0;
+      for (const o of state.orders) {
+        const t = calcTotals(o.items).total;
+        if (o.status === 'delivered') {
+          if (o.paymentMethod === 'UPI') upiTotal += t;
+          else cashTotal += t;
+        } else {
+          pendingTotal += t;
+        }
+      }
+      const collectedTotal = cashTotal + upiTotal;
+
+      // 1. Pending deliveries
+      if (q.includes('pending') || q.includes('deliver') || q.includes('open') || q.includes('left')) {
+        if (openOrders.length === 0) {
+          return {
+            title: 'No Pending Deliveries',
+            html: `<p>All <strong>${deliveredOrders.length}</strong> orders have been delivered and paid (<strong>${inr(collectedTotal)}</strong> collected).</p><p class="text-[var(--muted-foreground)]">Place a new test order in <strong>Doctor App</strong> and ask me again to see live updates.</p>`
+          };
+        }
+        return {
+          title: `${openOrders.length} Pending ${openOrders.length === 1 ? 'Delivery' : 'Deliveries'} (${inr(pendingTotal)})`,
+          html: openOrders.map(o => {
+            const t = calcTotals(o.items).total;
+            const stage = o.status === 'placed' ? 'Needs GST Invoice' : `Invoiced (${o.invoiceNo}) · Collect COD`;
+            return `<div class="p-2.5 rounded-xl bg-[var(--content)] space-y-0.5"><div class="flex justify-between font-semibold"><span>${o.id} · ${o.doctorName}</span><span>${inr(t)}</span></div><div class="text-[var(--muted-foreground)]">${o.clinic} · ${o.deliverySlot}</div><div class="text-[var(--primary)] font-medium">${stage}</div></div>`;
+          }).join('')
+        };
+      }
+
+      // 2. Cash / Money / UPI / Collection
+      if (q.includes('cash') || q.includes('upi') || q.includes('money') || q.includes('collect') || q.includes('paid') || q.includes('revenue')) {
+        return {
+          title: `Collections Summary · ${inr(collectedTotal)}`,
+          html: `
+            <div class="grid grid-cols-2 gap-2">
+              <div class="p-2.5 rounded-xl bg-[var(--content)]"><div class="text-[var(--muted-foreground)]">Cash in Hand</div><div class="text-sm font-bold text-[var(--success)]">${inr(cashTotal)}</div></div>
+              <div class="p-2.5 rounded-xl bg-[var(--content)]"><div class="text-[var(--muted-foreground)]">UPI Received</div><div class="text-sm font-bold">${inr(upiTotal)}</div></div>
+            </div>
+            <p class="pt-1">Paid orders: <strong>${deliveredOrders.length}</strong>. Pending to collect on open deliveries: <strong class="text-[var(--warning)]">${inr(pendingTotal)}</strong>.</p>
+          `
+        };
+      }
+
+      // 3. Top selling medicine / products
+      if (q.includes('medicine') || q.includes('product') || q.includes('top') || q.includes('selling') || q.includes('stock')) {
+        const counts = {};
+        for (const o of state.orders) {
+          for (const it of o.items) {
+            counts[it.name] = (counts[it.name] || 0) + it.qty;
+          }
+        }
+        const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+        return {
+          title: 'Top Ordered Formulations',
+          html: ranked.map(([name, qty], i) => `
+            <div class="flex justify-between py-1 ${i > 0 ? 'border-t border-[var(--card-border)]' : ''}">
+              <span class="font-medium">${i + 1}. ${name}</span>
+              <span class="font-bold tabular-nums">${qty} boxes</span>
+            </div>
+          `).join('')
+        };
+      }
+
+      // 4. Follow-up / Doctors / Samples
+      if (q.includes('follow') || q.includes('doctor') || q.includes('clinic') || q.includes('sample') || q.includes('remind')) {
+        const sampleLine = state.sampleRequests.length > 0
+          ? `<p><strong>Sample Requests:</strong> Bring samples of ${state.sampleRequests.join(', ')} on your next clinic visit.</p>`
+          : '';
+        return {
+          title: 'Recommended Clinic Follow-Ups',
+          html: `
+            ${sampleLine}
+            <div class="p-2.5 rounded-xl bg-[var(--content)] space-y-1">
+              <div class="font-semibold">Dr. Vikram Kulkarni · Kulkarni Care Polyclinic</div>
+              <div class="text-[var(--muted-foreground)]">Hasn't placed an order yet this month — good candidate for a CardioVeda AM sample visit.</div>
+            </div>
+            <div class="p-2.5 rounded-xl bg-[var(--content)] space-y-1">
+              <div class="font-semibold">Arogya Plus Medicals · Aundh</div>
+              <div class="text-[var(--muted-foreground)]">Usually stocks 10+2 GlucoShield M2 scheme at month-end.</div>
+            </div>
+          `
+        };
+      }
+
+      // 5. Default / Today's Daily Summary
+      return {
+        title: `Mvedia Daily Briefing`,
+        html: `
+          <div class="grid grid-cols-2 gap-2">
+            <div class="p-2.5 rounded-xl bg-[var(--content)]"><div class="text-[var(--muted-foreground)]">Collected</div><div class="text-sm font-bold text-[var(--success)]">${inr(collectedTotal)}</div><div class="text-[11px] text-[var(--muted-foreground)]">Cash ${inr(cashTotal)} · UPI ${inr(upiTotal)}</div></div>
+            <div class="p-2.5 rounded-xl bg-[var(--content)]"><div class="text-[var(--muted-foreground)]">Pending COD</div><div class="text-sm font-bold text-[var(--warning)]">${inr(pendingTotal)}</div><div class="text-[11px] text-[var(--muted-foreground)]">${openOrders.length} open ${openOrders.length === 1 ? 'order' : 'orders'}</div></div>
+          </div>
+          <p class="pt-1"><strong>Delivered:</strong> ${deliveredOrders.length} order${deliveredOrders.length === 1 ? '' : 's'} completed. ${openOrders.length > 0 ? `Next delivery: <strong>${openOrders[0].doctorName}</strong> (${openOrders[0].deliverySlot}).` : 'All scheduled clinic deliveries are complete!'}</p>
+        `
+      };
+    }
+
     function renderOwnerBottomNav(active) {
       const openDeliveries = state.orders.filter(o => o.status !== 'delivered').length;
       const tab = (id, label, icon, badge = 0) => `
@@ -1997,10 +2225,11 @@
         </button>
       `;
       return `
-        <nav class="shrink-0 bg-[var(--card)]/95 glass-bar border-t border-[var(--card-border)] px-3 pt-1.5 pb-3 grid grid-cols-3 z-20">
+        <nav class="shrink-0 bg-[var(--card)]/95 glass-bar border-t border-[var(--card-border)] px-2 pt-1.5 pb-3 grid grid-cols-4 z-20">
           ${tab('deliveries', 'Deliveries', `<path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>`, openDeliveries)}
           ${tab('cashbook', 'Cashbook', `<path stroke-linecap="round" stroke-linejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/>`)}
           ${tab('doctors', 'Clinics', `<path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>`)}
+          ${tab('assistant', 'AI Chat', `<path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>`)}
         </nav>
       `;
     }
